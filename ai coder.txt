@@ -1,0 +1,580 @@
+import React, { useState, useEffect, useRef } from 'react';
+
+const ICON_PLACEHOLDER_EMOJI = "❓"; // Default emoji for unrecognized icons
+
+// Mapping for some common text-based icon requests to emojis
+const iconEmojiMap = {
+    "lightbulb": "💡", "idea": "💡", "bulb": "💡",
+    "check": "✅", "tick": "✅", "done": "✅",
+    "star": "⭐", "favorite": "⭐",
+    "alert": "⚠️", "warning": "⚠️",
+    "info": "ℹ️", "information": "ℹ️",
+    "money": "💰", "finance": "💰", "dollar": "💵", "euro": "💶", "yen": "¥",
+    "chart": "📈", "growth": "📈", "up": "📈",
+    "down": "📉", "decline": "📉",
+    "team": "👥", "people": "👥", "group": "👥",
+    "gear": "⚙️", "settings": "⚙️", "tool": "🛠️",
+    "security": "🔒", "lock": "🔒",
+    "global": "🌐", "world": "🌐", "internet": "🌐",
+    "handshake": "🤝", "deal": "🤝", "partnership": "🤝",
+    "rocket": "🚀", "launch": "🚀", "startup": "🚀",
+    "book": "📚", "learn": "📚", "study": "📚",
+    "computer": "💻", "tech": "💻",
+    "phone": "📱",
+    "email": "✉️", "mail": "✉️",
+    "magnify": "🔍", "search": "🔍",
+    "calendar": "📅", "event": "📅",
+    "brain": "🧠", "ai": "🧠", "intelligence": "🧠",
+    "cloud": "☁️", "data": "☁️",
+    "fire": "🔥", "hot": "🔥", "trend": "🔥",
+    "medal": "🏅", "success": "🏅",
+    "trophy": "🏆", "win": "🏆",
+    "key": "🔑", "access": "🔑",
+    "certificate": "📜", "document": "�",
+    "wallet": "👛", "funds": "👛",
+    // Adding more emojis for new categories
+    "travel": "✈️", "plane": "✈️", "map": "🗺️",
+    "food": "🍔", "pizza": "🍕", "drink": "🥤",
+    "beauty": "💄", "fashion": "👗", "style": "💅",
+    "health": "❤️‍🩹", "fitness": "🏋️", "gym": "💪",
+    "love": "❤️", "heart": "❤️", "relationship": "💞",
+    "game": "🎮", "joystick": "🕹️", "controller": "🎮",
+    "science": "🔬", "lab": "🧪", "medicine": "💊",
+    "house": "🏠", "home": "🏡", "ownership": "🔑",
+    "lifestyle": "🧘", "hobbies": "🎨",
+    "pet": "🐾", "dog": "🐶", "cat": "🐱",
+    "news": "📰", "breaking": "🚨",
+    "entertainment": "🎬", "movie": "🍿", "music": "🎶"
+};
+
+
+// Main App component
+const App = () => {
+    // State variables for UI and generation process
+    const [topic, setTopic] = useState('');
+    const [blogPostHtml, setBlogPostHtml] = useState('');
+    const [thumbnailUrl, setThumbnailUrl] = useState(''); // This will now display the chosen image (uploaded or external URL)
+    const [selectedFile, setSelectedFile] = useState(null); // State for uploaded file object
+    const [externalImageUrl, setExternalImageUrl] = useState(''); // User-provided external image URL
+    const [imageCreditText, setImageCreditText] = useState(''); // User-provided text for image credit (e.g., "Photo by John Doe") - now used for hover
+    const [imageSourceLink, setImageSourceLink] = useState(''); // User-provided link to the original photo source
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState('');
+    const [copySuccess, setCopySuccess] = useState('');
+    const [theme, setTheme] = useState(() => {
+        try {
+            const storedTheme = localStorage.getItem('appTheme');
+            return storedTheme ? storedTheme : 'light';
+        } catch (e) {
+            console.error("Failed to parse stored theme from localStorage:", e);
+            return 'light';
+        }
+    });
+
+    // API URL for text generation
+    const textApiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=YOUR_API_KEY`; // IMPORTANT: Replace YOUR_API_KEY with your actual Google Cloud API Key
+
+    useEffect(() => {
+        // No audio player to clean up
+    }, []);
+
+    // Effect to apply theme to document body and save to localStorage
+    useEffect(() => {
+        document.documentElement.classList.remove('light', 'dark');
+        document.documentElement.classList.add(theme);
+        try {
+            localStorage.setItem('appTheme', theme);
+        } catch (e) {
+            console.error("Failed to save theme to localStorage:", e);
+        }
+    }, [theme]);
+
+    /**
+     * Toggles the theme between 'light' and 'dark'.
+     */
+    const toggleTheme = () => {
+        setTheme(prevTheme => (prevTheme === 'light' ? 'dark' : 'light'));
+    };
+
+    /**
+     * Handles file selection for image upload.
+     * Reads the file and sets its data URL to thumbnailUrl for immediate preview.
+     * Clears externalImageUrl and imageSourceLink if a file is uploaded.
+     * @param {Event} event The file input change event.
+     */
+    const handleFileChange = (event) => {
+        const file = event.target.files[0];
+        if (file) {
+            setSelectedFile(file);
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                setThumbnailUrl(reader.result); // Set the Data URL for preview
+            };
+            reader.readAsDataURL(file);
+            setExternalImageUrl(''); // Clear external URL if file is uploaded
+            // imageCreditText and imageSourceLink are handled by user for their input
+            setError(''); // Clear any previous errors
+        } else {
+            setSelectedFile(null);
+            setThumbnailUrl('');
+        }
+    };
+
+    /**
+     * Handles external image URL input change.
+     * Clears selectedFile if an external URL is entered.
+     * @param {Event} event The input change event.
+     */
+    const handleExternalImageUrlChange = (e) => {
+        setExternalImageUrl(e.target.value);
+        setSelectedFile(null); // Clear uploaded file if external URL is provided
+        setThumbnailUrl(e.target.value); // Show external URL immediately in preview
+        setError('');
+    };
+
+
+    /**
+     * Converts raw text from the AI (potentially with markdown headings and custom icon tags)
+     * into a single HTML string with <p>, <h2>, and <span> tags.
+     * @param {string} rawText The raw text from the AI.
+     * @param {string} mainImageUrl The URL of the main image to include at the top.
+     * @param {string} mainImageCreditText The display text for the image credit (for hover).
+     * @param {string} mainImageSourceLink The URL to link the image to.
+     * @returns {string} The formatted HTML string.
+     */
+    const convertToHtml = (rawText, mainImageUrl, mainImageCreditText, mainImageSourceLink) => {
+        let htmlContent = '';
+
+        // Generate the image HTML with optional hyperlink and title (for hover credit)
+        if (mainImageUrl) {
+            // Ensure the title attribute is properly escaped for HTML and handles empty credit text
+            const imageTitle = mainImageCreditText ? `Image Credit: ${mainImageCreditText.replace(/"/g, '&quot;')}` : '';
+            const imgTag = `<img src="${mainImageUrl}" alt="Blog Post Main Image" title="${imageTitle}" style="max-width: 100%; height: auto; border-radius: 0.5rem; box-shadow: 0 4px 6px rgba(0,0,0,0.1); width: 100%; max-w-full; aspect-ratio: 16 / 9; object-fit: cover;" onerror="this.onerror=null;this.src='https://placehold.co/1280x720/E0E7FF/5B21B6?text=Image+Load+Error';"/>`;
+
+            // If a source link is provided, wrap the image in an anchor tag
+            if (mainImageSourceLink) {
+                htmlContent += `
+                    <div style="margin-bottom: 1.5rem; text-align: center;">
+                        <a href="${mainImageSourceLink}" target="_blank" rel="noopener noreferrer" style="display: block;">
+                            ${imgTag}
+                        </a>
+                    </div>
+                `;
+            } else {
+                // If no source link, just display the image
+                htmlContent += `
+                    <div style="margin-bottom: 1.5rem; text-align: center;">
+                        ${imgTag}
+                    </div>
+                `;
+            }
+        }
+
+        // --- Pre-process custom icon tags within the raw text ---
+        let processedRawText = rawText;
+
+        // Process [[ICON: "Name of icon/emoji"]] tags
+        processedRawText = processedRawText.replace(/\[\[ICON:\s*"([^"]*)"\]\]/g, (match, iconContent) => {
+            let displayIcon = ICON_PLACEHOLDER_EMOJI;
+            let iconDescription = "Generic Icon";
+
+            // Try to use direct emoji or map from common names
+            if (/\p{Emoji}/u.test(iconContent)) { // Check if it's already an emoji
+                displayIcon = iconContent;
+                iconDescription = `${iconContent} emoji`;
+            } else {
+                const lowerCaseIconContent = iconContent.toLowerCase();
+                if (iconEmojiMap[lowerCaseIconContent]) { // Map from text name to emoji
+                    displayIcon = iconEmojiMap[lowerCaseIconContent];
+                    iconDescription = `${iconContent} icon (${displayIcon})`;
+                } else {
+                    displayIcon = iconContent; // Fallback to text if not an emoji or mapped
+                    iconDescription = `${iconContent} icon (No specific emoji mapped)`;
+                }
+            }
+
+            // Return a styled span for the icon
+            return `<span style="font-size: 1.2em; vertical-align: middle; margin: 0 0.2em; display: inline-block;" role="img" aria-label="${iconDescription}">${displayIcon}</span>`;
+        });
+
+        // --- Process the pre-processed text into paragraphs and headings ---
+        const lines = processedRawText.split('\n');
+        let currentParagraph = [];
+
+        lines.forEach(line => {
+            const trimmedLine = line.trim();
+
+            if (trimmedLine.startsWith('## ')) { // H2 heading
+                if (currentParagraph.length > 0) {
+                    htmlContent += `<p>${currentParagraph.join('<br/>')}</p>`;
+                    currentParagraph = [];
+                }
+                const headingText = trimmedLine.substring(3).trim();
+                htmlContent += `<h2>${headingText}</h2>`;
+            } else if (trimmedLine.startsWith('# ')) { // H1 heading
+                if (currentParagraph.length > 0) {
+                    htmlContent += `<p>${currentParagraph.join('<br/>')}</p>`;
+                    currentParagraph = [];
+                }
+                const headingText = trimmedLine.substring(2).trim();
+                htmlContent += `<h1>${headingText}</h1>`;
+            } else if (trimmedLine === '') { // Empty line for paragraph break
+                if (currentParagraph.length > 0) {
+                    htmlContent += `<p>${currentParagraph.join('<br/>')}</p>`;
+                    currentParagraph = [];
+                }
+            } else {
+                // No link conversion here, just push the processed line as plain text
+                currentParagraph.push(trimmedLine);
+            }
+        });
+
+        // Add any remaining paragraph content at the end
+        if (currentParagraph.length > 0) {
+            htmlContent += `<p>${currentParagraph.join('<br/>')}</p>`;
+        }
+
+        return htmlContent;
+    };
+
+
+    /**
+     * Handles the generation of the blog post.
+     * Uses uploaded image or external URL for thumbnail. No AI image generation.
+     * @param {string} currentTopic The topic for the blog post.
+     */
+    const generateArticle = async (currentTopic) => {
+        setLoading(true);
+        setBlogPostHtml('');
+        setThumbnailUrl(''); // Clear the displayed image
+        setError('');
+        setCopySuccess('');
+
+        if (!currentTopic.trim()) {
+            setError("Please enter a topic before generating a blog post.");
+            setLoading(false);
+            return;
+        }
+
+        let articleContent = '';
+        // Determine the final image URL based on user input
+        let finalImageUrl = selectedFile ? URL.createObjectURL(selectedFile) : externalImageUrl;
+
+        try {
+            // --- Step 1: Generate Article Text ---
+            let chatHistory = [];
+            const prompt = `Write a very comprehensive, informative, and engaging blog post about "${currentTopic}".
+The article should be 1500 to 2500 words or more long.
+Each paragraph should:
+- Focus on one idea or subtopic.
+- Be 4–6 sentences long.
+- Use simple, conversational language.
+- Include examples, data, or explanations where relevant.
+- Flow logically from one to the next to maintain good structure.
+Avoid fluff and repetition. Write as if explaining the topic to a curious but non-expert reader.
+You can suggest placements for icons within the text using this format: [[ICON: "Name of icon/emoji, e.g., 'lightbulb' or '📈'"]]. For example: [[ICON: "💡"]] or [[ICON: "money"]].
+Use clear markdown headings for main sections (e.g., '## Section Title') and separate paragraphs with double newlines.`;
+            chatHistory.push({ role: "user", parts: [{ text: prompt }] });
+
+            const textPayload = {
+                contents: chatHistory,
+                generationConfig: {
+                    temperature: 0.7,
+                    maxOutputTokens: 8000, // Increased maxOutputTokens for longer articles
+                },
+            };
+
+            console.log("Fetching article text from URL:", textApiUrl);
+            const textResponse = await fetch(textApiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(textPayload)
+            });
+
+            if (!textResponse.ok) {
+                const errorText = await textResponse.text();
+                if (textResponse.status === 401) {
+                    throw new Error(`Authentication error (401): Please ensure your API key is valid and the Generative Language API is enabled for your project. Raw error: ${errorText}`);
+                }
+                throw new Error(`Text API error: ${textResponse.status} ${textResponse.statusText}. Raw response: ${errorText}`);
+            }
+
+            const textResult = await textResponse.json();
+
+            if (textResult.candidates && textResult.candidates.length > 0) {
+                const candidate = textResult.candidates[0];
+                if (candidate.finishReason === "MAX_TOKENS") {
+                    setError((prev) => prev ? prev + "\nAI generation stopped due to max length. Try a shorter topic or regenerate." : "AI generation stopped due to max length. You might try a shorter topic or generate again.");
+                    if (candidate.content && candidate.content.parts && candidate.content.parts.length > 0) {
+                        articleContent = candidate.content.parts[0].text;
+                    }
+                } else if (candidate.content && candidate.content.parts && candidate.content.parts.length > 0) {
+                    articleContent = candidate.content.parts[0].text;
+                } else {
+                    setError("Failed to generate blog post content. The AI did not return content.");
+                    console.error("API response with no content parts for article:", textResult);
+                }
+            } else {
+                setError("Failed to generate blog post content. No candidates returned from the AI.");
+                console.error("API response with no candidates for article:", textResult);
+            }
+
+            // --- Step 2: Set the thumbnail URL and pass credit/source to HTML conversion ---
+            // If an image was selected or an external URL provided, display it.
+            setThumbnailUrl(finalImageUrl);
+
+
+            // --- Step 3: Combine and set the final HTML ---
+            setBlogPostHtml(convertToHtml(articleContent, finalImageUrl, imageCreditText, imageSourceLink));
+
+        } catch (err) {
+            setError(`An error occurred: ${err.message}. Please check your network connection or try again.`);
+            console.error("Overall generation error:", err);
+        } finally {
+            setLoading(false);
+            // Ensure any Object URL created for file preview is revoked when generation finishes
+            if (selectedFile && finalImageUrl && finalImageUrl.startsWith('blob:')) {
+                URL.revokeObjectURL(finalImageUrl);
+            }
+        }
+    };
+
+    /**
+     * Handles copying the generated HTML content to the clipboard.
+     * @param {string} htmlContent The HTML content to copy.
+     */
+    const handleCopyHtml = (htmlContent) => {
+        if (htmlContent) {
+            const textarea = document.createElement('textarea');
+            textarea.value = htmlContent;
+            document.body.appendChild(textarea);
+            textarea.select();
+            try {
+                document.execCommand('copy');
+                setCopySuccess(`Copied HTML to clipboard!`);
+            } catch (err) {
+                setCopySuccess('Failed to copy. Please copy manually.');
+                console.error('Failed to copy HTML: ', err);
+            }
+            document.body.removeChild(textarea);
+            setTimeout(() => setCopySuccess(''), 3000);
+        }
+    };
+
+    return (
+        <div className={`min-h-screen flex flex-col items-center p-4 sm:p-6 font-inter transition-colors duration-500
+                        ${theme === 'light' ? 'bg-gradient-to-br from-indigo-50 to-purple-100 text-gray-900' : 'bg-gradient-to-br from-gray-900 to-gray-700 text-gray-100'}`}>
+
+            {/* Theme Toggle Button */}
+            <button
+                onClick={toggleTheme}
+                className={`fixed top-4 right-4 p-3 rounded-full shadow-lg transition-all duration-500 transform hover:scale-105
+                            ${theme === 'light' ? 'bg-white text-gray-800 hover:bg-gray-100' : 'bg-gray-800 text-yellow-300 hover:bg-gray-700'}`}
+                aria-label="Toggle theme"
+            >
+                {theme === 'light' ? (
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 3v1m0 16v1m9-9h1M4 12H3m15.325 3.325l-.707.707M6.371 6.371l-.707-.707m12.728 0l-.707-.707M6.371 17.629l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path>
+                    </svg>
+                ) : (
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9 9 0 008.354-5.646z"></path>
+                    </svg>
+                )}
+            </button>
+
+            {/* Header Section */}
+            <header className="w-full max-w-4xl text-center mb-8">
+                <h1 className={`text-4xl sm:text-5xl font-extrabold leading-tight mb-2 transition-colors duration-500
+                                ${theme === 'light' ? 'text-gray-900' : 'text-gray-100'}`}>
+                    AI Blog Post Generator
+                </h1>
+                <p className={`text-lg transition-colors duration-500 ${theme === 'light' ? 'text-gray-600' : 'text-gray-300'}`}>
+                    Generate articles with your chosen images.
+                </p>
+            </header>
+
+            {/* Input and Button Section */}
+            <div className={`w-full max-w-2xl p-6 rounded-2xl shadow-xl border mb-8 transition-colors duration-500
+                            ${theme === 'light' ? 'bg-white border-gray-200' : 'bg-gray-800 border-gray-700'}`}>
+                <div className="mb-4">
+                    <label htmlFor="topic-input" className={`block text-lg font-medium mb-2 transition-colors duration-500
+                                                        ${theme === 'light' ? 'text-gray-700' : 'text-gray-200'}`}>
+                        Blog Post Topic:
+                    </label>
+                    <input
+                        id="topic-input"
+                        type="text"
+                        value={topic}
+                        onChange={(e) => setTopic(e.target.value)}
+                        placeholder="e.g., The Impact of AI on Education"
+                        className={`w-full p-3 border rounded-lg shadow-sm focus:ring-purple-500 focus:border-purple-500 text-base transition-colors duration-500
+                                    ${theme === 'light' ? 'border-gray-300 text-gray-800' : 'border-gray-600 bg-gray-700 text-gray-100'}`}
+                        disabled={loading}
+                    />
+                </div>
+
+                <hr className={`my-6 ${theme === 'light' ? 'border-gray-300' : 'border-gray-600'}`} />
+
+                <div className="mb-4">
+                    <label htmlFor="image-upload-input" className={`block text-lg font-medium mb-2 transition-colors duration-500
+                                                        ${theme === 'light' ? 'text-gray-700' : 'text-gray-200'}`}>
+                        Upload Image (Optional):
+                    </label>
+                    <input
+                        id="image-upload-input"
+                        type="file"
+                        accept="image/*"
+                        onChange={handleFileChange}
+                        className={`w-full p-3 border rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 text-base transition-colors duration-500
+                                    ${theme === 'light' ? 'border-gray-300 text-gray-800 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-violet-50 file:text-violet-700 hover:file:bg-violet-100' : 'border-gray-600 bg-gray-700 text-gray-100 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-900 file:text-blue-200 hover:file:bg-blue-800'}`}
+                        disabled={loading}
+                    />
+                     <p className={`text-sm mt-2 transition-colors duration-500 ${theme === 'light' ? 'text-gray-500' : 'text-gray-400'}`}>
+                        Choose a file from your computer. This will override any external URL.
+                    </p>
+                </div>
+                <div className="mb-4">
+                    <label htmlFor="external-image-url-input" className={`block text-lg font-medium mb-2 transition-colors duration-500
+                                                        ${theme === 'light' ? 'text-gray-700' : 'text-gray-200'}`}>
+                        Or provide External Image URL (Optional):
+                    </label>
+                    <input
+                        id="external-image-url-input"
+                        type="url"
+                        value={externalImageUrl}
+                        onChange={handleExternalImageUrlChange}
+                        placeholder="e.g., https://example.com/your-image.jpg"
+                        className={`w-full p-3 border rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 text-base transition-colors duration-500
+                                    ${theme === 'light' ? 'border-gray-300 text-gray-800' : 'border-gray-600 bg-gray-700 text-gray-100'}`}
+                        disabled={loading || selectedFile !== null}
+                    />
+                     <p className={`text-sm mt-2 transition-colors duration-500 ${theme === 'light' ? 'text-gray-500' : 'text-gray-400'}`}>
+                        Providing a URL will clear any uploaded file.
+                    </p>
+                </div>
+
+                <div className="mb-4">
+                    <label htmlFor="image-credit-text-input" className={`block text-lg font-medium mb-2 transition-colors duration-500
+                                                        ${theme === 'light' ? 'text-gray-700' : 'text-gray-200'}`}>
+                        Image Credit Text (Displayed on image hover):
+                    </label>
+                    <input
+                        id="image-credit-text-input"
+                        type="text"
+                        value={imageCreditText}
+                        onChange={(e) => setImageCreditText(e.target.value)}
+                        placeholder="e.g., Photo by Jane Smith"
+                        className={`w-full p-3 border rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 text-base transition-colors duration-500
+                                    ${theme === 'light' ? 'border-gray-300 text-gray-800' : 'border-gray-600 bg-gray-700 text-gray-100'}`}
+                        disabled={loading}
+                    />
+                </div>
+                <div className="mb-6">
+                    <label htmlFor="image-source-link-input" className={`block text-lg font-medium mb-2 transition-colors duration-500
+                                                        ${theme === 'light' ? 'text-gray-700' : 'text-gray-200'}`}>
+                        Image Source Link (Optional, makes image hyperlinked):
+                    </label>
+                    <input
+                        id="image-source-link-input"
+                        type="url"
+                        value={imageSourceLink}
+                        onChange={(e) => setImageSourceLink(e.target.value)}
+                        placeholder="e.g., https://unsplash.com/photos/xyz"
+                        className={`w-full p-3 border rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 text-base transition-colors duration-500
+                                    ${theme === 'light' ? 'border-gray-300 text-gray-800' : 'border-gray-600 bg-gray-700 text-gray-100'}`}
+                        disabled={loading}
+                    />
+                     <p className={`text-sm mt-2 transition-colors duration-500 ${theme === 'light' ? 'text-gray-500' : 'text-gray-400'}`}>
+                        If you upload an image or use an external URL not owned by you, provide the original source link here.
+                        The image will become a hyperlink to this URL in the generated HTML.
+                    </p>
+                </div>
+
+                <div className="flex justify-center">
+                    <button
+                        onClick={() => generateArticle(topic)}
+                        className={`py-3 px-6 rounded-lg text-white font-semibold text-lg transition duration-300 ease-in-out transform hover:scale-105 hover:shadow-lg
+                                    ${loading ? 'bg-purple-300 cursor-not-allowed' : 'bg-purple-600 hover:bg-purple-700 active:scale-95 shadow-md'}`}
+                        disabled={loading}
+                    >
+                        {loading ? (
+                            <div className="flex items-center justify-center">
+                                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                Generating...
+                            </div>
+                        ) : (
+                            'Generate Blog Post'
+                        )}
+                    </button>
+                </div>
+
+                {error && (
+                    <div className="mt-4 text-red-500 text-center font-medium p-3 rounded-lg bg-red-100 border border-red-200 animate-fade-in">
+                        {error}
+                    </div>
+                )}
+            </div>
+
+            {/* Thumbnail Display (if available) */}
+            {thumbnailUrl && (
+                <div className="w-full max-w-4xl mb-8 p-4 rounded-lg text-center bg-transparent transition-transform duration-300 transform hover:scale-[1.01]">
+                    <h2 className={`text-2xl font-bold mb-4 ${theme === 'light' ? 'text-gray-800' : 'text-gray-100'}`}>Preview Image</h2>
+                    {/* The image itself becomes a hyperlink if imageSourceLink is provided */}
+                    {imageSourceLink ? (
+                        <a href={imageSourceLink} target="_blank" rel="noopener noreferrer" className="block">
+                            <img
+                                src={thumbnailUrl}
+                                alt="Blog Post Thumbnail"
+                                title={imageCreditText ? `Image Credit: ${imageCreditText}` : ''} /* Title for hover */
+                                className="w-full h-auto max-w-4xl mx-auto rounded-lg shadow-lg transition-shadow duration-300 hover:shadow-xl"
+                                style={{aspectRatio: '16 / 9', objectFit: 'cover'}}
+                                onError={(e) => { e.target.onerror = null; e.target.src = 'https://placehold.co/1280x720/E0E7FF/5B21B6?text=Image+Load+Error'; }}
+                            />
+                        </a>
+                    ) : (
+                        <img
+                            src={thumbnailUrl}
+                            alt="Blog Post Thumbnail"
+                            title={imageCreditText ? `Image Credit: ${imageCreditText}` : ''} /* Title for hover */
+                            className="w-full h-auto max-w-4xl mx-auto rounded-lg shadow-lg transition-shadow duration-300 hover:shadow-xl"
+                            style={{aspectRatio: '16 / 9', objectFit: 'cover'}}
+                            onError={(e) => { e.target.onerror = null; e.target.src = 'https://placehold.co/1280x720/E0E7FF/5B21B6?text=Image+Load+Error'; }}
+                        />
+                    )}
+                </div>
+            )}
+
+            {/* Generated Blog Post Section */}
+            {blogPostHtml && (
+                <div className={`w-full max-w-4xl p-6 rounded-2xl shadow-xl transition-colors duration-500 border animate-fade-in
+                                ${theme === 'light' ? 'bg-white border-gray-200' : 'bg-gray-800 border-gray-700'}`}>
+                    <div className="flex justify-between items-center mb-4">
+                        <h2 className={`text-2xl font-bold ${theme === 'light' ? 'text-gray-800' : 'text-gray-100'}`}>Generated Blog Post</h2>
+                        <button
+                            onClick={() => handleCopyHtml(blogPostHtml)}
+                            className={`py-2 px-4 rounded-md text-sm font-semibold transition duration-300 ease-in-out hover:scale-105
+                                        ${copySuccess ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}
+                                        ${theme === 'dark' ? 'dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600' : ''}`}
+                        >
+                            {copySuccess || 'Copy HTML'}
+                        </button>
+                    </div>
+
+                    <div
+                        className={`prose max-w-none break-words
+                                    ${theme === 'light' ? 'prose-indigo' : 'prose-invert prose-p:text-gray-200 prose-h1:text-gray-100 prose-h2:text-gray-100 prose-strong:text-gray-100'}`}
+                        dangerouslySetInnerHTML={{ __html: blogPostHtml }}
+                        style={{ overflowWrap: 'break-word', wordWrap: 'break-word' }}
+                    ></div>
+                </div>
+            )}
+        </div>
+    );
+};
+
+export default App;
+�
